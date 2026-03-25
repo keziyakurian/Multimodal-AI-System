@@ -1,5 +1,7 @@
 # Multimodal AI System (IDP + RAG)
 
+**🚀 Live Demo:** [https://multimodal-ai-system-ffzsp4p2apushwv72kyazm.streamlit.app](https://multimodal-ai-system-ffzsp4p2apushwv72kyazm.streamlit.app)
+
 This repository contains a professional-grade **Intelligent Document Processing (IDP)** and **Retrieval-Augmented Generation (RAG)** pipeline. The system is architected to solve the "Unstructured Data Crisis" in high-stakes industries like Banking, Healthcare, and Insurance by transforming messy scans, tables, and images into verified, actionable intelligence.
 
 ---
