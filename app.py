@@ -169,25 +169,45 @@ with col_left:
         pipeline_val = "scientific" if "Scientific" in pipeline else "standard"
         all_pages = []
 
-        with st.spinner(f"Routing to {pipeline_val.upper()} Microservice for extraction..."):
-            import requests
-            for uploaded_file in uploaded_files:
-                file_bytes = uploaded_file.read()
-                try:
-                    files = {"file": (uploaded_file.name, file_bytes, "application/octet-stream")}
-                    data = {"pipeline_type": pipeline_val}
-                    res = requests.post("https://multimodal-ai-system.onrender.com/extract", files=files, data=data)
+        if pipeline_val == "scientific":
+            with st.spinner(f"Routing to {pipeline_val.upper()} Microservice for heavy GPU extraction..."):
+                import requests
+                for uploaded_file in uploaded_files:
+                    file_bytes = uploaded_file.read()
+                    try:
+                        files = {"file": (uploaded_file.name, file_bytes, "application/octet-stream")}
+                        data = {"pipeline_type": pipeline_val}
+                        res = requests.post("https://multimodal-ai-system.onrender.com/extract", files=files, data=data)
+                        
+                        if res.status_code == 200 and res.json().get("status") == "success":
+                            pages = res.json()["pages"]
+                            for page in pages:
+                                page["source_file"] = uploaded_file.name
+                            all_pages.extend(pages)
+                        else:
+                            st.error(f"Microservice Error for {uploaded_file.name}: {res.text}")
+                    except requests.exceptions.ConnectionError:
+                        st.error("Cannot connect to Ingestion Microservice. Ensure it's running or wait for Render Cold Start.")
+        else:
+            with st.spinner("Extracting standard digital text locally (Instant)..."):
+                for uploaded_file in uploaded_files:
+                    file_bytes = uploaded_file.read()
+                    file_extension = uploaded_file.name.split('.')[-1].lower() if uploaded_file.name else "pdf"
                     
-                    if res.status_code == 200 and res.json().get("status") == "success":
-                        pages = res.json()["pages"]
-                        for page in pages:
-                            page["source_file"] = uploaded_file.name
-                        all_pages.extend(pages)
-                    else:
-                        st.error(f"Microservice Error for {uploaded_file.name}: {res.text}")
-                except requests.exceptions.ConnectionError:
-                    st.error("Cannot connect to Ingestion Microservice. Ensure it's running via `uvicorn microservice_app:app --port 8000`")
-                    break
+                    try:
+                        doc = fitz.open(stream=file_bytes, filetype=file_extension)
+                        for i, page in enumerate(doc):
+                            text = page.get_text().strip()
+                            all_pages.append({
+                                "source_file": uploaded_file.name,
+                                "page": i,
+                                "content": text if text else "[Scanned page — no digital text detected]",
+                                "confidence": compute_confidence(text),
+                                "word_count": len(text.split()),
+                                "char_count": len(text)
+                            })
+                    except Exception as e:
+                        st.error(f"Could not parse {uploaded_file.name} locally: {e}")
 
         if all_pages:
             total_words = sum(p["word_count"] for p in all_pages)
