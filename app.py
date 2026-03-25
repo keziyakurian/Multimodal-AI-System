@@ -3,6 +3,10 @@ import os
 import fitz  # PyMuPDF
 import chromadb
 from groq import Groq
+import uuid
+
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
 
 # --- PAGE CONFIG ---
 st.set_page_config(
@@ -107,25 +111,18 @@ def compute_confidence(text: str) -> float:
     ratio = len(alpha_words) / len(words)
     return round(0.55 + ratio * 0.44, 2)
 
-# --- TEXT EXTRACTION ---
-def extract_text_from_pdf(file_bytes: bytes) -> list:
-    doc = fitz.open(stream=file_bytes, filetype="pdf")
-    pages = []
-    for i, page in enumerate(doc):
-        text = page.get_text().strip()
-        pages.append({
-            "page": i,
-            "content": text if text else "[Scanned page — no digital text detected]",
-            "confidence": compute_confidence(text),
-            "word_count": len(text.split()),
-            "char_count": len(text)
-        })
-    return pages
+# --- TEXT EXTRACTION (Deprecated - Now routed to Microservice) ---
+# See microservice_app.py for the full GPU / OCR extraction logic
 
 # --- RAG QUERY ---
 def rag_query(domain: str, question: str) -> str:
     collection = get_collection(domain)
-    results = collection.query(query_texts=[question], n_results=3)
+    # Enable Session-based Metadata Filtering!
+    results = collection.query(
+        query_texts=[question], 
+        n_results=3,
+        where={"session_id": st.session_state.session_id}
+    )
     docs = results.get("documents", [[]])[0]
     metas = results.get("metadatas", [[]])[0]
 
@@ -163,25 +160,47 @@ col_left, col_right = st.columns([1, 1], gap="large")
 with col_left:
     st.subheader("Document Ingestion")
     domain = st.selectbox("Industry Vertical", ["healthcare", "banking", "insurance", "general"])
-    uploaded_file = st.file_uploader("Upload PDF", type=["pdf"])
+    pipeline = st.radio("Ingestion Pipeline", ["Standard (Fast CPU OCR)", "Scientific / Equation Heavy (GPU Nougat/Marker)"])
+    
+    # Enable multiple PDFs and images
+    uploaded_files = st.file_uploader("Upload PDF or Image", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
 
-    if uploaded_file:
-        file_bytes = uploaded_file.read()
+    if uploaded_files:
+        pipeline_val = "scientific" if "Scientific" in pipeline else "standard"
+        all_pages = []
 
-        with st.spinner("Extracting text..."):
-            pages = extract_text_from_pdf(file_bytes)
+        with st.spinner(f"Routing to {pipeline_val.upper()} Microservice for extraction..."):
+            import requests
+            for uploaded_file in uploaded_files:
+                file_bytes = uploaded_file.read()
+                try:
+                    files = {"file": (uploaded_file.name, file_bytes, "application/octet-stream")}
+                    data = {"pipeline_type": pipeline_val}
+                    res = requests.post("http://localhost:8000/extract", files=files, data=data)
+                    
+                    if res.status_code == 200 and res.json().get("status") == "success":
+                        pages = res.json()["pages"]
+                        for page in pages:
+                            page["source_file"] = uploaded_file.name
+                        all_pages.extend(pages)
+                    else:
+                        st.error(f"Microservice Error for {uploaded_file.name}: {res.text}")
+                except requests.exceptions.ConnectionError:
+                    st.error("Cannot connect to Ingestion Microservice. Ensure it's running via `uvicorn microservice_app:app --port 8000`")
+                    break
 
-        total_words = sum(p["word_count"] for p in pages)
-        avg_conf = sum(p["confidence"] for p in pages) / len(pages)
+        if all_pages:
+            total_words = sum(p["word_count"] for p in all_pages)
+            avg_conf = sum(p["confidence"] for p in all_pages) / len(all_pages) if all_pages else 0.0
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Pages", len(pages))
-        m2.metric("Words Extracted", f"{total_words:,}")
-        m3.metric("Avg Confidence", f"{avg_conf:.0%}")
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Pages extracted", len(all_pages))
+            m2.metric("Words Extracted", f"{total_words:,}")
+            m3.metric("Avg Confidence", f"{avg_conf:.0%}")
 
         st.divider()
 
-        for p in pages:
+        for p in all_pages:
             conf = p["confidence"]
             if conf >= 0.85:
                 badge = f"<span class='badge-high'>High Confidence ({conf:.0%})</span>"
@@ -190,32 +209,45 @@ with col_left:
             else:
                 badge = f"<span class='badge-low'>Low Confidence ({conf:.0%})</span>"
 
-            with st.expander(f"Page {p['page'] + 1}  —  {p['word_count']} words", expanded=(p['page'] == 0)):
+            source_name = p.get("source_file", "Unknown")
+            with st.expander(f"{source_name} — Page {p['page'] + 1}  ({p['word_count']} words)", expanded=False):
                 st.markdown(badge, unsafe_allow_html=True)
-                st.text_area("Extracted Content", value=p["content"], height=130, key=f"page_{p['page']}")
+                st.text_area("Extracted Content", value=p["content"], height=130, key=f"page_{source_name}_{p['page']}")
 
         st.divider()
         st.subheader("Validate and Store")
         entity_name = st.text_input("Entity Name", placeholder="e.g. John Doe, HDFC Bank")
-        doc_id = st.text_input("Document ID", value=f"DOC-{uploaded_file.name[:8].upper().replace('.','')}")
+        
+        default_batch_id = f"BATCH-{uploaded_files[0].name[:8].upper().replace('.','')}" if uploaded_files else "BATCH-01"
+        doc_id = st.text_input("Document/Batch ID", value=default_batch_id)
 
-        if st.button("Approve and Save to Vector Memory"):
-            all_text = " ".join(p["content"] for p in pages)
+        if st.button("Approve and Save to Vector Memory") and all_pages:
+            all_text = " ".join(p["content"] for p in all_pages)
             chunks = chunk_text(all_text)
             collection = get_collection(domain)
 
             progress = st.progress(0, text="Preparing chunks...")
+            
+            source_files_str = ", ".join([f.name for f in uploaded_files])
+            
             for idx, chunk in enumerate(chunks):
-                chunk_id = f"{doc_id}-chunk-{idx}"
+                # Unique ID locked to this specific user session
+                chunk_id = f"{st.session_state.session_id}-{doc_id}-chunk-{idx}"
                 collection.add(
                     documents=[chunk],
-                    metadatas=[{"source": uploaded_file.name, "entity": entity_name, "domain": domain, "chunk": str(idx)}],
+                    metadatas=[{
+                        "source": source_files_str, 
+                        "entity": entity_name, 
+                        "domain": domain, 
+                        "chunk": str(idx),
+                        "session_id": st.session_state.session_id  # <--- METADATA FILTER TAG
+                    }],
                     ids=[chunk_id]
                 )
                 progress.progress((idx + 1) / len(chunks), text=f"Storing chunk {idx + 1} of {len(chunks)}...")
 
             progress.empty()
-            st.success(f"Stored {len(chunks)} chunk(s) from '{uploaded_file.name}' into the {domain} vault.")
+            st.success(f"Stored {len(chunks)} chunk(s) securely into the {domain} vault (Isolated to your session window).")
             st.balloons()
 
 # =========================================
