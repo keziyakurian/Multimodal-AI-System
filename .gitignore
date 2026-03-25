@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+.env
+data/vector_db/
+data/uploads/
+data/temp/
+logs/
+*.egg-info/
+.DS_Store
