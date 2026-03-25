@@ -176,7 +176,7 @@ with col_left:
                 try:
                     files = {"file": (uploaded_file.name, file_bytes, "application/octet-stream")}
                     data = {"pipeline_type": pipeline_val}
-                    res = requests.post("http://localhost:8000/extract", files=files, data=data)
+                    res = requests.post("https://YOUR-NEW-RENDER-URL.com/extract", files=files, data=data)
                     
                     if res.status_code == 200 and res.json().get("status") == "success":
                         pages = res.json()["pages"]
