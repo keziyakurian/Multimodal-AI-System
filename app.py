@@ -2,43 +2,78 @@ import streamlit as st
 import os
 import fitz  # PyMuPDF
 import chromadb
-from openai import OpenAI
+from groq import Groq
 
 # --- PAGE CONFIG ---
 st.set_page_config(
-    page_title="Multimodal IDP | AI Document Intelligence",
-    page_icon="🧠",
+    page_title="Multimodal IDP | Intelligent Document Processing",
+    page_icon=None,
     layout="wide"
 )
 
-# --- CUSTOM CSS ---
+# --- STYLING ---
 st.markdown("""
 <style>
-    .metric-card {
-        background: linear-gradient(135deg, #1a1a2e, #16213e);
-        border: 1px solid #0f3460;
-        border-radius: 12px;
-        padding: 18px;
-        text-align: center;
-        color: white;
+    /* Gradient background */
+    .stApp {
+        background: linear-gradient(160deg, #0d1117 0%, #161b27 50%, #0d1117 100%);
+        color: #e6edf3;
     }
-    .metric-value { font-size: 2rem; font-weight: bold; color: #e94560; }
-    .metric-label { font-size: 0.85rem; color: #aaa; margin-top: 4px; }
-    .confidence-high { color: #00d26a; font-weight: bold; }
-    .confidence-mid  { color: #f9a825; font-weight: bold; }
-    .confidence-low  { color: #e94560; font-weight: bold; }
+
+    /* Sidebar */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #161b27 0%, #0d1117 100%);
+        border-right: 1px solid #30363d;
+    }
+
+    /* Metric cards */
+    [data-testid="stMetric"] {
+        background: #161b27;
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        padding: 16px;
+    }
+
+    /* Headers */
+    h1, h2, h3 { color: #e6edf3; font-family: 'Segoe UI', sans-serif; }
+
+    /* Divider */
+    hr { border-color: #30363d; }
+
+    /* Buttons */
+    .stButton > button {
+        background: linear-gradient(90deg, #1f6feb, #388bfd);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-weight: 600;
+        padding: 8px 20px;
+        transition: opacity 0.2s;
+    }
+    .stButton > button:hover { opacity: 0.85; }
+
+    /* Text areas */
+    textarea { background: #0d1117 !important; color: #c9d1d9 !important; border: 1px solid #30363d !important; }
+
+    /* Confidence badges */
+    .badge-high { color: #3fb950; font-weight: 600; }
+    .badge-mid  { color: #d29922; font-weight: 600; }
+    .badge-low  { color: #f85149; font-weight: 600; }
+
+    /* Footer */
+    .footer { color: #8b949e; font-size: 0.78rem; text-align: center; margin-top: 32px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- LOAD API KEY ---
+# --- API KEY ---
 try:
-    OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+    GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 except Exception:
     from dotenv import load_dotenv
     load_dotenv()
-    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+    GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 
-client_llm = OpenAI(api_key=OPENAI_API_KEY)
+client_llm = Groq(api_key=GROQ_API_KEY)
 
 # --- VECTOR DB ---
 @st.cache_resource
@@ -49,21 +84,28 @@ def get_vector_db():
 chroma_client = get_vector_db()
 
 def get_collection(domain: str):
-    return chroma_client.get_or_create_collection(f"{domain}_idp")
+    return chroma_client.get_or_create_collection(name=f"{domain}idp")
+
+# --- TEXT CHUNKING ---
+def chunk_text(text: str, chunk_size: int = 300) -> list:
+    """Splits text into overlapping chunks of ~300 words for better retrieval."""
+    words = text.split()
+    chunks = []
+    step = chunk_size - 50  # 50-word overlap between chunks
+    for i in range(0, len(words), step):
+        chunk = " ".join(words[i:i + chunk_size])
+        if chunk.strip():
+            chunks.append(chunk)
+    return chunks if chunks else [text]
 
 # --- CONFIDENCE SCORING ---
 def compute_confidence(text: str) -> float:
-    """
-    Estimates extraction confidence based on text density.
-    High density (many real words) = high confidence.
-    """
     words = text.split()
-    if len(words) == 0:
+    if not words:
         return 0.0
     alpha_words = [w for w in words if any(c.isalpha() for c in w)]
-    score = min(len(alpha_words) / max(len(words), 1), 1.0)
-    # Scale to a realistic OCR range (0.55 - 0.99)
-    return round(0.55 + score * 0.44, 2)
+    ratio = len(alpha_words) / len(words)
+    return round(0.55 + ratio * 0.44, 2)
 
 # --- TEXT EXTRACTION ---
 def extract_text_from_pdf(file_bytes: bytes) -> list:
@@ -71,13 +113,11 @@ def extract_text_from_pdf(file_bytes: bytes) -> list:
     pages = []
     for i, page in enumerate(doc):
         text = page.get_text().strip()
-        confidence = compute_confidence(text)
-        word_count = len(text.split())
         pages.append({
             "page": i,
-            "content": text if text else "[Scanned page — no digital text found]",
-            "confidence": confidence,
-            "word_count": word_count,
+            "content": text if text else "[Scanned page — no digital text detected]",
+            "confidence": compute_confidence(text),
+            "word_count": len(text.split()),
             "char_count": len(text)
         })
     return pages
@@ -90,17 +130,17 @@ def rag_query(domain: str, question: str) -> str:
     metas = results.get("metadatas", [[]])[0]
 
     if not docs:
-        return "❌ No documents found in this vault. Upload and approve a document first."
+        return "No documents found in this domain vault. Please upload and approve a document first."
 
     context = "\n---\n".join(docs)
     source = metas[0].get("source", "Unknown") if metas else "Unknown"
     entity = metas[0].get("entity", "") if metas else ""
 
     response = client_llm.chat.completions.create(
-        model="gpt-4o",
+        model="llama-3.1-8b-instant",
         temperature=0,
         messages=[
-            {"role": "system", "content": f"You are a document analysis AI for the {domain} industry. Answer ONLY from the provided context. If the answer is not in the context, say you don't know."},
+            {"role": "system", "content": f"You are a document analysis AI for the {domain} industry. Answer ONLY from the context provided. If the answer is not present, say you don't know."},
             {"role": "user", "content": f"CONTEXT:\n{context}\n\nQUESTION:\n{question}"}
         ]
     )
@@ -109,106 +149,114 @@ def rag_query(domain: str, question: str) -> str:
     return f"{answer}\n\n---\n{entity_line}**Source:** `{source}`"
 
 # =========================================
-# --- HEADER ---
+# HEADER
 # =========================================
-st.title("🧠 Multimodal IDP — Intelligent Document Processing")
-st.markdown("**Enterprise-grade document intelligence.** Upload any PDF → AI extracts, validates, and remembers it → Ask questions in natural language.")
+st.title("Multimodal IDP")
+st.markdown("**Intelligent Document Processing** — Upload a PDF, extract structured data, and query it in natural language.")
 st.divider()
 
-# =========================================
-# --- LEFT PANEL: INGEST ---
-# =========================================
 col_left, col_right = st.columns([1, 1], gap="large")
 
+# =========================================
+# LEFT — INGEST
+# =========================================
 with col_left:
-    st.subheader("📄 Step 1 — Ingest Document")
-    domain = st.selectbox("Industry Vertical", ["healthcare", "banking", "insurance", "general"], key="domain")
-    uploaded_file = st.file_uploader("Upload a PDF", type=["pdf"])
+    st.subheader("Document Ingestion")
+    domain = st.selectbox("Industry Vertical", ["healthcare", "banking", "insurance", "general"])
+    uploaded_file = st.file_uploader("Upload PDF", type=["pdf"])
 
     if uploaded_file:
         file_bytes = uploaded_file.read()
 
-        with st.spinner("🔍 Extracting text via PyMuPDF..."):
+        with st.spinner("Extracting text..."):
             pages = extract_text_from_pdf(file_bytes)
 
-        # --- DOCUMENT METRICS ---
         total_words = sum(p["word_count"] for p in pages)
         avg_conf = sum(p["confidence"] for p in pages) / len(pages)
-        total_pages = len(pages)
 
         m1, m2, m3 = st.columns(3)
-        m1.metric("📄 Pages", total_pages)
-        m2.metric("📝 Words Extracted", f"{total_words:,}")
-        m3.metric("🎯 Avg Confidence", f"{avg_conf:.0%}")
+        m1.metric("Pages", len(pages))
+        m2.metric("Words Extracted", f"{total_words:,}")
+        m3.metric("Avg Confidence", f"{avg_conf:.0%}")
 
         st.divider()
 
-        # --- PER PAGE DISPLAY ---
         for p in pages:
             conf = p["confidence"]
             if conf >= 0.85:
-                badge = f"<span class='confidence-high'>● High Confidence ({conf:.0%})</span>"
+                badge = f"<span class='badge-high'>High Confidence ({conf:.0%})</span>"
             elif conf >= 0.65:
-                badge = f"<span class='confidence-mid'>● Medium Confidence ({conf:.0%})</span>"
+                badge = f"<span class='badge-mid'>Medium Confidence ({conf:.0%})</span>"
             else:
-                badge = f"<span class='confidence-low'>● Low Confidence ({conf:.0%})</span>"
+                badge = f"<span class='badge-low'>Low Confidence ({conf:.0%})</span>"
 
-            with st.expander(f"Page {p['page'] + 1}  |  {p['word_count']} words", expanded=(p['page'] == 0)):
+            with st.expander(f"Page {p['page'] + 1}  —  {p['word_count']} words", expanded=(p['page'] == 0)):
                 st.markdown(badge, unsafe_allow_html=True)
-                st.text_area("Extracted Text", value=p["content"], height=130, key=f"page_{p['page']}")
+                st.text_area("Extracted Content", value=p["content"], height=130, key=f"page_{p['page']}")
 
         st.divider()
-        st.subheader("📋 Validate & Store")
-        entity_name = st.text_input("Entity / Name", placeholder="e.g. John Doe, HDFC Bank")
+        st.subheader("Validate and Store")
+        entity_name = st.text_input("Entity Name", placeholder="e.g. John Doe, HDFC Bank")
         doc_id = st.text_input("Document ID", value=f"DOC-{uploaded_file.name[:8].upper().replace('.','')}")
 
-        if st.button("✅ Approve & Save to Vector Memory"):
+        if st.button("Approve and Save to Vector Memory"):
             all_text = " ".join(p["content"] for p in pages)
-            with st.spinner("Embedding and storing..."):
-                collection = get_collection(domain)
+            chunks = chunk_text(all_text)
+            collection = get_collection(domain)
+
+            progress = st.progress(0, text="Preparing chunks...")
+            for idx, chunk in enumerate(chunks):
+                chunk_id = f"{doc_id}-chunk-{idx}"
                 collection.add(
-                    documents=[all_text],
-                    metadatas=[{"source": uploaded_file.name, "entity": entity_name, "domain": domain, "pages": str(total_pages), "words": str(total_words)}],
-                    ids=[doc_id]
+                    documents=[chunk],
+                    metadatas=[{"source": uploaded_file.name, "entity": entity_name, "domain": domain, "chunk": str(idx)}],
+                    ids=[chunk_id]
                 )
-            st.success(f"✅ `{uploaded_file.name}` stored in **{domain}** vault!")
+                progress.progress((idx + 1) / len(chunks), text=f"Storing chunk {idx + 1} of {len(chunks)}...")
+
+            progress.empty()
+            st.success(f"Stored {len(chunks)} chunk(s) from '{uploaded_file.name}' into the {domain} vault.")
             st.balloons()
 
 # =========================================
-# --- RIGHT PANEL: SEARCH & RAG ---
+# RIGHT — QUERY
 # =========================================
 with col_right:
-    st.subheader("🤖 Step 2 — Ask Questions (RAG)")
-    st.markdown("Once a document is approved, you can ask questions about it in plain English.")
+    st.subheader("Document Query (RAG)")
+    st.markdown("Once a document is approved, ask questions about it in plain English. The system retrieves the relevant context and generates an answer using GPT-4o.")
 
     search_domain = st.selectbox("Search Domain", ["healthcare", "banking", "insurance", "general"], key="sdomain")
-    question = st.text_area("Your Question", placeholder="e.g. What medications were prescribed?\nWhat is the ending balance?\nWhat is the claim amount?", height=110)
+    question = st.text_area("Question", placeholder="e.g. What medications were prescribed?\nWhat is the ending account balance?", height=100)
 
-    if st.button("🔍 Search & Answer with GPT-4o"):
+    if st.button("Search and Answer"):
         if not question.strip():
             st.warning("Please enter a question.")
-        elif not OPENAI_API_KEY:
-            st.error("OpenAI API key not found. Add it to Streamlit Secrets.")
+        elif not GROQ_API_KEY:
+            st.error("Groq API key not configured.")
         else:
-            with st.spinner("Searching vector memory and reasoning with GPT-4o..."):
+            with st.spinner("Searching vector memory and generating answer..."):
                 answer = rag_query(search_domain, question)
-            st.markdown("### 🤖 AI Answer")
+            st.markdown("### Answer")
             st.markdown(answer)
 
     st.divider()
-    st.subheader("📊 System Architecture")
+    st.subheader("System Architecture")
     st.markdown("""
-    | Layer | Technology | Purpose |
-    |---|---|---|
-    | Extraction | PyMuPDF | Parse PDF text |
-    | Confidence | Text Density Model | Quality validation |
-    | Memory | ChromaDB | Vector storage |
-    | Reasoning | GPT-4o (RAG) | Natural language answers |
-    | Validation | Pydantic Schemas | Data integrity |
+| Layer | Technology | Role |
+|---|---|---|
+| Extraction | PyMuPDF | Parse and extract text from PDFs |
+| Confidence | Text Density Scoring | Validate extraction quality |
+| Vector Memory | ChromaDB | Store and retrieve document embeddings |
+| Reasoning | GPT-4o (RAG) | Generate answers from retrieved context |
+| Validation | Pydantic Schemas | Enforce data structure and integrity |
+| API | FastAPI | Production service layer |
     """)
 
 # =========================================
-# --- FOOTER ---
+# FOOTER
 # =========================================
 st.divider()
-st.caption("🧠 Multimodal IDP v2.0  |  PyMuPDF + ChromaDB + GPT-4o  |  Built by Keziya Kurian  |  Intelligent Document Processing for Healthcare · Banking · Insurance")
+st.markdown(
+    "<div class='footer'>Multimodal IDP v2.0  |  PyMuPDF + ChromaDB + GPT-4o  |  Built by Keziya Kurian</div>",
+    unsafe_allow_html=True
+)

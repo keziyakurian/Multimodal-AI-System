@@ -1,0 +1,27 @@
+# Core Backend
+fastapi
+uvicorn
+pydantic
+python-dotenv
+
+# AI & RAG Orchestration
+langchain
+langchain-community
+langchain-openai
+langchain-huggingface
+
+# Vector Storage
+chromadb
+
+# Document Processing & OCR
+pymupdf  # (fitz) for PDF handling
+easyocr  # for scanned image OCR
+tabula-py # for table extraction
+pandas
+
+# Cloud & Storage
+boto3     # for S3 integration
+
+# Utilities
+python-multipart # for FastAPI file uploads
+tqdm
