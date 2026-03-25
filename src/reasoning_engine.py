@@ -25,7 +25,7 @@ class ReasoningEngine:
         metadatas = search_results.get('metadatas', [[]])[0]
         
         if not extracted_docs:
-            return "❌ No relevant information found in the knowledge base."
+            return " No relevant information found in the knowledge base."
 
         # 2. PROMPT CONSTRUCTION
         context = "\n---\n".join(extracted_docs)
@@ -50,7 +50,7 @@ class ReasoningEngine:
             
             # Format output with Sources
             source_file = metadatas[0].get('source', 'Unknown')
-            final_output = f"### 🤖 AI Analysis ({domain.capitalize()})\n\n"
+            final_output = f"###  AI Analysis ({domain.capitalize()})\n\n"
             final_output += response.content
             final_output += f"\n\n**Source Document:** `{source_file}`"
             

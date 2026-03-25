@@ -14,7 +14,7 @@ except ImportError:
 # --- UI CONFIGURATION ---
 st.set_page_config(page_title="Multimodal IDP Review Room", layout="wide")
 
-st.title("🛡️ Multimodal IDP: Human-in-the-Loop Review")
+st.title(" Multimodal IDP: Human-in-the-Loop Review")
 st.markdown("""
 Welcome to the Review Room. Here you can verify AI-extracted data from Insurance, Banking, and Healthcare documents.
 """)
@@ -26,7 +26,7 @@ if 'vdb' not in st.session_state:
     st.session_state['vdb'] = VectorDB()
 
 # --- SIDEBAR: Upload & Engine ---
-st.sidebar.header("📁 Document Ingestion")
+st.sidebar.header(" Document Ingestion")
 domain = st.sidebar.selectbox("Industry Vertical", ["banking", "healthcare", "insurance"])
 uploaded_file = st.sidebar.file_uploader("Upload a Scan or PDF", type=["pdf", "png", "jpg", "jpeg"])
 
@@ -43,14 +43,14 @@ if uploaded_file is not None:
     col1, col2 = st.columns([1, 1])
 
     with col1:
-        st.subheader("📄 Original Document")
+        st.subheader(" Original Document")
         if uploaded_file.type == "application/pdf":
             st.info("PDF Preview: " + uploaded_file.name)
         else:
             st.image(uploaded_file, use_column_width=True)
 
     with col2:
-        st.subheader("🔍 Extraction Results")
+        st.subheader(" Extraction Results")
         
         with st.spinner("Extracting..."):
             results = st.session_state['engine'].load_document(temp_path)
@@ -71,11 +71,11 @@ if uploaded_file is not None:
                 st.text_area(f"Text Content (Page {page_data['page'] + 1})", value=page_data['content'], height=150, key=f"text_{page_data['page']}")
             
             st.divider()
-            st.subheader("📝 Verify Structured Data")
+            st.subheader(" Verify Structured Data")
             client_name = st.text_input("Entity Name", value="Auto-Extracting...")
             doc_id = st.text_input("Document ID", value=f"DOC-{uploaded_file.name[:5].upper()}")
             
-            if st.button("✅ Approve & Save to Vector DB"):
+            if st.button(" Approve & Save to Vector DB"):
                 with st.spinner("Embedding and Storing..."):
                     st.session_state['vdb'].add_documents(
                         domain=domain,
@@ -87,7 +87,7 @@ if uploaded_file is not None:
                     st.balloons()
 
 # --- SEARCH WORKSPACE ---
-st.header("🔎 Knowledge Retrieval (RAG)")
+st.header(" Knowledge Retrieval (RAG)")
 search_tab, chat_tab = st.tabs(["Semantic Search", "AI Chat (Reasoning)"])
 
 with search_tab:
