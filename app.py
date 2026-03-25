@@ -160,7 +160,7 @@ col_left, col_right = st.columns([1, 1], gap="large")
 with col_left:
     st.subheader("Document Ingestion")
     domain = st.selectbox("Industry Vertical", ["healthcare", "banking", "insurance", "general"])
-    pipeline = st.radio("Ingestion Pipeline", ["Standard (Fast CPU OCR)", "Scientific / Equation Heavy (GPU Nougat/Marker)"])
+    pipeline = st.radio("Ingestion Pipeline", ["Standard (Fast CPU OCR)", "Scientific / Equation Heavy (Surya Marker GPU)"])
     
     # Enable multiple PDFs and images
     uploaded_files = st.file_uploader("Upload PDF or Image", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)

@@ -24,18 +24,18 @@ async def extract_document(
         
         # Check routing
         if pipeline_type.lower() == "scientific":
-            # --- PLACEHOLDER FOR NOUGAT/MARKER GPU PIPELINE ---
+            # --- PLACEHOLDER FOR SURYA MARKER GPU PIPELINE ---
             # In a real environment, you'd send this to a GPU model that outputs LaTeX.
             # We will simulate a heavy process extracting LaTeX
             time.sleep(2) # Simulating GPU latency
             pages.append({
                 "page": 0,
-                "content": "This is a strictly parsed Math block simulated by Nougat GPU.\n\n$$ E=mc^2 $$\n\n$\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}$",
+                "content": "This is a strictly parsed Math block simulated by Surya Marker GPU.\n\n$$ E=mc^2 $$\n\n$\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}$",
                 "confidence": 0.99,
                 "word_count": 21,
                 "char_count": 125
             })
-            return {"status": "success", "pipeline": "gpu_nougat", "pages": pages}
+            return {"status": "success", "pipeline": "gpu_surya_marker", "pages": pages}
             
         else:
             # --- STANDARD CPU PIPELINE (PyMuPDF) ---
