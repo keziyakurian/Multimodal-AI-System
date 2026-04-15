@@ -7,10 +7,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def _get_secret(key: str) -> str:
+    """Reads a secret from st.secrets (Streamlit Cloud) or os.environ (local)."""
+    try:
+        import streamlit as st
+        return st.secrets.get(key, os.getenv(key, ""))
+    except Exception:
+        return os.getenv(key, "")
+
 class VoiceEngine:
     def __init__(self):
-        self.dg_api_key = os.getenv("DEEPGRAM_API_KEY")
-        self.cartesia_api_key = os.getenv("CARTESIA_API_KEY")
+        self.dg_api_key = _get_secret("DEEPGRAM_API_KEY")
+        self.cartesia_api_key = _get_secret("CARTESIA_API_KEY")
         
         if self.dg_api_key:
             self.dg_client = DeepgramClient(self.dg_api_key)
