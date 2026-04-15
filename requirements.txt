@@ -3,3 +3,9 @@ pymupdf
 chromadb
 groq
 python-dotenv
+deepgram-sdk
+cartesia
+streamlit-mic-recorder
+langchain
+langchain-groq
+langchain-openai

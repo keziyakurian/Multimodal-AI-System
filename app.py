@@ -4,6 +4,11 @@ import fitz  # PyMuPDF
 import chromadb
 from groq import Groq
 import uuid
+import sys
+import requests
+from streamlit_mic_recorder import mic_recorder
+from src.voice_engine import VoiceEngine, get_audio_html
+from src.agent_engine import AgenticEngine
 
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
@@ -271,37 +276,76 @@ with col_left:
             st.balloons()
 
 # =========================================
-# RIGHT — QUERY
+# RIGHT — QUERY (Agentic Voice Assistant)
 # =========================================
 with col_right:
-    st.subheader("Document Query (RAG)")
-    st.markdown("Once a document is approved, ask questions about it in plain English. The system retrieves the relevant context and generates an answer using GPT-4o.")
+    st.subheader("Agentic Voice Assistant")
+    st.markdown("Ask complex questions or give commands. The agent uses tools to reason across documents.")
+
+    # Voice Engine & Agent Init
+    voice_engine = VoiceEngine()
+    
+    def agent_rag_search(query: str):
+        # This is the tool function for the agent
+        return rag_query(st.session_state.get("sdomain", "general"), query)
+
+    agent_engine = AgenticEngine(vector_db_query_fn=agent_rag_search)
 
     search_domain = st.selectbox("Search Domain", ["healthcare", "banking", "insurance", "general"], key="sdomain")
-    question = st.text_area("Question", placeholder="e.g. What medications were prescribed?\nWhat is the ending account balance?", height=100)
+    
+    # --- VOICE INPUT ---
+    st.write("🎙️ **Voice Command**")
+    audio_record = mic_recorder(
+        start_prompt="Click to Speak",
+        stop_prompt="Stop Recording",
+        key='mic_recorder'
+    )
 
-    if st.button("Search and Answer"):
-        if not question.strip():
-            st.warning("Please enter a question.")
+    question = st.text_area("Question", placeholder="e.g. Based on this invoice, draft an email asking for a 10% discount.", height=100, key="agent_question")
+
+    # If voice is captured, overwrite question
+    if audio_record:
+        with st.spinner("Transcribing..."):
+            voice_text = voice_engine.stt(audio_record['bytes'])
+            if "Error" not in voice_text:
+                st.session_state.agent_question = voice_text
+                st.info(f"Captured: {voice_text}")
+            else:
+                st.error(voice_text)
+
+    if st.button("Execute Agentic Task"):
+        input_text = st.session_state.agent_question if st.session_state.agent_question else question
+        if not input_text.strip():
+            st.warning("Please enter a question or speak.")
         elif not GROQ_API_KEY:
             st.error("Groq API key not configured.")
         else:
-            with st.spinner("Searching vector memory and generating answer..."):
-                answer = rag_query(search_domain, question)
-            st.markdown("### Answer")
+            with st.spinner("Agent is reasoning and executing tools..."):
+                answer = agent_engine.run(input_text)
+            
+            st.markdown("### Assistant Response")
             st.markdown(answer)
+            
+            # --- VOICE OUTPUT ---
+            if st.checkbox("Read response aloud (TTS)"):
+                with st.spinner("Generating voice..."):
+                    audio_bytes = voice_engine.tts(answer)
+                    if audio_bytes:
+                        st.markdown(get_audio_html(audio_bytes), unsafe_allow_html=True)
+                    else:
+                        st.warning("TTS API Key missing or error occurred.")
 
     st.divider()
     st.subheader("System Architecture")
     st.markdown("""
 | Layer | Technology | Role |
 |---|---|---|
-| Extraction | PyMuPDF | Parse and extract text from PDFs |
-| Confidence | Text Density Scoring | Validate extraction quality |
-| Vector Memory | ChromaDB | Store and retrieve document embeddings |
-| Reasoning | GPT-4o (RAG) | Generate answers from retrieved context |
-| Validation | Pydantic Schemas | Enforce data structure and integrity |
-| API | FastAPI | Production service layer |
+| Ingestion | PyMuPDF / Surya | Extract text from documents |
+| STT | Deepgram (Nova-2) | Voice-to-text input |
+| Agentic Layer | LangChain Agent | Tool-based reasoning loop |
+| Vector Memory | ChromaDB | Isolated session-based storage |
+| Reasoning | Llama-3.1 (Groq) | High-speed LLM inference |
+| TTS | Cartesia (Sonic) | Text-to-speech feedback |
     """)
 
 # =========================================
@@ -309,6 +353,6 @@ with col_right:
 # =========================================
 st.divider()
 st.markdown(
-    "<div class='footer'>Multimodal IDP v2.0  |  PyMuPDF + ChromaDB + GPT-4o  |  Built by Keziya Kurian</div>",
+    "<div class='footer'>Multimodal IDP v2.0  |  PyMuPDF + ChromaDB + Llama-3.1-8b-instant  |  Built by Keziya Kurian</div>",
     unsafe_allow_html=True
 )
