@@ -1,6 +1,7 @@
 streamlit
 pymupdf
-chromadb
+chromadb==0.5.23
+protobuf==4.25.3
 groq
 python-dotenv
 deepgram-sdk
