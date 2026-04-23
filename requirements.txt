@@ -8,5 +8,7 @@ deepgram-sdk
 cartesia
 streamlit-mic-recorder
 langchain
+langchain-community
+langchain-core
 langchain-groq
 langchain-openai
