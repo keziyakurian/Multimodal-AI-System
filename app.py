@@ -14,7 +14,7 @@ import sys
 import requests
 from streamlit_mic_recorder import mic_recorder
 from src.voice_engine import VoiceEngine, get_audio_html
-from src.agent_engine import AgenticEngine
+# from src.agent_engine import AgenticEngine  <-- Moved inside button for stability
 
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
@@ -295,7 +295,7 @@ with col_right:
         # This is the tool function for the agent
         return rag_query(st.session_state.get("sdomain", "general"), query)
 
-    agent_engine = AgenticEngine(vector_db_query_fn=agent_rag_search)
+    # agent_engine = AgenticEngine(vector_db_query_fn=agent_rag_search) # Moved inside button
 
     search_domain = st.selectbox("Search Domain", ["healthcare", "banking", "insurance", "general"], key="sdomain")
     
@@ -327,6 +327,8 @@ with col_right:
             st.error("Groq API key not configured.")
         else:
             with st.spinner("Agent is reasoning and executing tools..."):
+                from src.agent_engine import AgenticEngine
+                agent_engine = AgenticEngine(vector_db_query_fn=agent_rag_search)
                 answer = agent_engine.run(input_text)
             
             st.markdown("### Assistant Response")
