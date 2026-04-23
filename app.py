@@ -139,7 +139,7 @@ def rag_query(domain: str, question: str) -> str:
     entity = metas[0].get("entity", "") if metas else ""
 
     response = client_llm.chat.completions.create(
-        model="llama-3.1-8b-instant",
+        model="llama-3.3-70b-versatile",
         temperature=0,
         messages=[
             {"role": "system", "content": f"You are a document analysis AI for the {domain} industry. Answer ONLY from the context provided. If the answer is not present, say you don't know."},

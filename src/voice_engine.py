@@ -1,7 +1,7 @@
 import os
 import base64
 import requests
-from deepgram import DeepgramClient, PrerecordedOptions
+from deepgram import DeepgramClient
 from cartesia import Cartesia
 from dotenv import load_dotenv
 
@@ -21,7 +21,7 @@ class VoiceEngine:
         self.cartesia_api_key = _get_secret("CARTESIA_API_KEY")
         
         if self.dg_api_key:
-            self.dg_client = DeepgramClient(self.dg_api_key)
+            self.dg_client = DeepgramClient(api_key=self.dg_api_key)
         else:
             self.dg_client = None
             
@@ -36,12 +36,12 @@ class VoiceEngine:
             return "Error: Deepgram API Key not set."
         
         try:
-            payload = {'buffer': audio_bytes}
-            options = PrerecordedOptions(
+            # v6.x SDK pattern
+            response = self.dg_client.listen.v1.media.transcribe_file(
+                request=audio_bytes,
                 model="nova-2",
                 smart_format=True,
             )
-            response = self.dg_client.listen.prerecorded.v("1").transcribe_file(payload, options)
             return response.results.channels[0].alternatives[0].transcript
         except Exception as e:
             return f"STT Error: {str(e)}"
