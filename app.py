@@ -1,5 +1,9 @@
 import streamlit as st
 import os
+
+# Fix for Protobuf / OpenTelemetry compatibility issues on some environments
+os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
+
 import fitz  # PyMuPDF
 import chromadb
 from groq import Groq
