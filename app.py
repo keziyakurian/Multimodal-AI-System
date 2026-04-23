@@ -3,6 +3,8 @@ import os
 
 # Fix for Protobuf / OpenTelemetry compatibility issues on some environments
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
+os.environ["CHROMA_TELEMETRY_EXPORTER"] = "none"
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
 
 import fitz  # PyMuPDF
 import chromadb
